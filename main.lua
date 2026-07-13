@@ -1,8 +1,8 @@
 -- ===============================================
---   ☾ EVENTIDE v3.3 — CUSTOM KEYBINDS EDITION
+--   ☾ EVENTIDE v3.4 — RMB SILENT AIM EDITION
 --   Da Hood & Boom Hood
 --   Hit Part Spoof + 100% Headshot + Hitbox + Keybinds
---   Premium Black-Purple UI
+--   Hold RMB to Silent Aim
 -- ===============================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -48,7 +48,9 @@ local CFG = {
     Prediction       = 0.135,
     PredMult         = 1.0,
     AutoPred         = true,
-    OnlyWhenShooting = true,
+    OnlyWhenShooting = false,
+    HoldToAim        = true,
+    AimButton        = "Right",
     TeamCheck        = false,
     NoDowned         = true,
     VisCheck         = false,
@@ -101,6 +103,7 @@ local PosHist        = {}
 local RH             = 0
 local curPred        = 0.135
 local isShooting     = false
+local isHolding      = false
 local hookStatus     = "⏳ Ждём..."
 local hooksInstalled = 0
 
@@ -356,17 +359,33 @@ RS.Heartbeat:Connect(function()
     cachedPred = (Target and CFG.SilentAim) and GetHeadPosition100(Target) or nil
 end)
 
--- ==================== SHOOT DETECTION ====================
+-- ==================== SHOOT / AIM DETECTION ====================
+local function GetAimButtonEnum()
+    if CFG.AimButton == "Right" then
+        return Enum.UserInputType.MouseButton2
+    elseif CFG.AimButton == "Middle" then
+        return Enum.UserInputType.MouseButton3
+    else
+        return Enum.UserInputType.MouseButton1
+    end
+end
+
 UIS.InputBegan:Connect(function(i, gpe)
     if gpe then return end
     if i.UserInputType == Enum.UserInputType.MouseButton1 then
         isShooting = true
+    end
+    if i.UserInputType == GetAimButtonEnum() then
+        isHolding = true
     end
 end)
 
 UIS.InputEnded:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 then
         isShooting = false
+    end
+    if i.UserInputType == GetAimButtonEnum() then
+        isHolding = false
     end
 end)
 
@@ -479,6 +498,7 @@ task.spawn(function()
         if not IsSafeCaller() then return false end
         if not IsHoldingGun() then return false end
         if CFG.OnlyWhenShooting and not isShooting then return false end
+        if CFG.HoldToAim and not isHolding then return false end
         return true
     end
 
@@ -561,7 +581,7 @@ task.spawn(function()
     hooksInstalled = installed
     if installed > 0 then
         hookStatus = "🎯 " .. installed .. " hooks"
-        Notify("Eventide v3.3", "💀 " .. installed .. " HEADSHOT hooks", 5)
+        Notify("Eventide v3.4", "💀 " .. installed .. " hooks | Держи ПКМ", 5)
     else
         hookStatus = "❌ 0 hooks"
         Notify("Eventide", "Hooks не установлены", 5)
@@ -626,27 +646,28 @@ RS.RenderStepped:Connect(function(dt)
     FOVd.Radius   = CFG.FOV
     FOVd.Position = sc
     FOVd.Color    = CFG.Rainbow and Color3.fromHSV(RH,0.8,1)
-        or (isShooting and Color3.fromRGB(255,60,180) or CFG.FOVCol)
+        or (isHolding and Color3.fromRGB(0,255,140) or (isShooting and Color3.fromRGB(255,60,180) or CFG.FOVCol))
 
     if cachedPred and CFG.ShowPred and Target then
         local sp = Cam:WorldToViewportPoint(cachedPred)
         PD.Visible = sp.Z > 0
         PD.Position = Vector2.new(sp.X, sp.Y)
-        PD.Color = isShooting and Color3.fromRGB(255,0,0) or Color3.fromRGB(160,80,255)
-        PD.Radius = isShooting and 8 or 5
+        PD.Color = isHolding and Color3.fromRGB(0,255,140) or (isShooting and Color3.fromRGB(255,0,0) or Color3.fromRGB(160,80,255))
+        PD.Radius = (isHolding or isShooting) and 8 or 5
     else
         PD.Visible = false
     end
 
     if CFG.Debug then
         DB.Visible = true
-        local tn = Target and Target.Name or "—"
+        local tn  = Target and Target.Name or "—"
         local gun = IsHoldingGun() and "🔫" or "—"
-        local sh = isShooting and "💀" or "—"
-        local hb = CFG.HitboxExpander and ("HB:"..CFG.HitboxSize) or ""
+        local sh  = isShooting and "💀" or "—"
+        local aim = isHolding and "🎯" or "—"
+        local hb  = CFG.HitboxExpander and ("HB:"..CFG.HitboxSize) or ""
         DB.Text = string.format(
-            "☾ PRED:%dms  PING:%dms  TGT:%s  %s %s  %s  %s",
-            curPred*1000, math.floor(GetPing()), tn, gun, sh, hookStatus, hb
+            "☾ PRED:%dms  PING:%dms  TGT:%s  %s %s %s  %s  %s",
+            curPred*1000, math.floor(GetPing()), tn, gun, sh, aim, hookStatus, hb
         )
         DB.Position = Vector2.new(12, 36)
     else
@@ -784,12 +805,12 @@ VerBadge.BackgroundColor3 = P.Accent; VerBadge.BorderSizePixel = 0
 Instance.new("UICorner", VerBadge).CornerRadius = UDim.new(0,6)
 local VerText = Instance.new("TextLabel", VerBadge)
 VerText.Size = UDim2.new(1,0,1,0); VerText.BackgroundTransparency = 1
-VerText.Text = "v3.3 💀"; VerText.TextColor3 = Color3.new(1,1,1)
+VerText.Text = "v3.4 🎯"; VerText.TextColor3 = Color3.new(1,1,1)
 VerText.Font = Enum.Font.GothamBold; VerText.TextSize = 10
 
 local StatusLbl = Instance.new("TextLabel", TopBar)
 StatusLbl.Size = UDim2.new(0,300,0,14); StatusLbl.Position = UDim2.new(0,18,1,-18)
-StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Custom Keybinds • Da Hood"
+StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Hold RMB Silent Aim • Da Hood"
 StatusLbl.TextColor3 = P.Dim; StatusLbl.Font = Enum.Font.Gotham; StatusLbl.TextSize = 10
 StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1100,10 +1121,60 @@ end)
 -- TAB 1: AIM
 local p1, act1 = CreateTab("💀", "Aim")
 SectionHeader(p1, "100% HEADSHOT")
-Label(p1, "Автоматически целится в голову", P.Green)
+Label(p1, "Держи ПКМ — целится в голову", P.Green)
 Spacer(p1)
 Toggle(p1, "Enable Silent Aim", "SilentAim")
+Toggle(p1, "Hold to Aim (по кнопке)", "HoldToAim")
 Toggle(p1, "Only When Shooting", "OnlyWhenShooting")
+Spacer(p1, 4)
+
+-- Aim Button Selector
+local aimBtnFrame = Instance.new("Frame", p1)
+aimBtnFrame.Size = UDim2.new(1,0,0,32)
+aimBtnFrame.BackgroundColor3 = P.Card
+aimBtnFrame.BorderSizePixel = 0
+Instance.new("UICorner", aimBtnFrame).CornerRadius = UDim.new(0,8)
+
+local aimBtnLbl = Instance.new("TextLabel", aimBtnFrame)
+aimBtnLbl.Size = UDim2.new(0.5,0,1,0)
+aimBtnLbl.Position = UDim2.new(0,14,0,0)
+aimBtnLbl.BackgroundTransparency = 1
+aimBtnLbl.Text = "Aim Button"
+aimBtnLbl.TextColor3 = P.White
+aimBtnLbl.Font = Enum.Font.Gotham
+aimBtnLbl.TextSize = 11
+aimBtnLbl.TextXAlignment = Enum.TextXAlignment.Left
+
+local function MakeMouseBtn(x, name, cfgVal)
+    local b = Instance.new("TextButton", aimBtnFrame)
+    b.Size = UDim2.new(0, 50, 0, 22)
+    b.Position = UDim2.new(1, x, 0.5, -11)
+    b.BackgroundColor3 = CFG.AimButton == cfgVal and P.Accent or P.Off
+    b.Text = name
+    b.TextColor3 = P.White
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 10
+    b.BorderSizePixel = 0
+    b.AutoButtonColor = false
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    return b
+end
+
+local btnL = MakeMouseBtn(-170, "LMB", "Left")
+local btnR = MakeMouseBtn(-115, "RMB", "Right")
+local btnM = MakeMouseBtn(-60,  "MMB", "Middle")
+
+local function UpdateMouseBtns()
+    TS:Create(btnL, TI_Fast, {BackgroundColor3 = CFG.AimButton == "Left" and P.Accent or P.Off}):Play()
+    TS:Create(btnR, TI_Fast, {BackgroundColor3 = CFG.AimButton == "Right" and P.Accent or P.Off}):Play()
+    TS:Create(btnM, TI_Fast, {BackgroundColor3 = CFG.AimButton == "Middle" and P.Accent or P.Off}):Play()
+end
+
+btnL.MouseButton1Click:Connect(function() CFG.AimButton = "Left";   UpdateMouseBtns(); Notify("☾","Aim: ЛКМ",1.5) end)
+btnR.MouseButton1Click:Connect(function() CFG.AimButton = "Right";  UpdateMouseBtns(); Notify("☾","Aim: ПКМ",1.5) end)
+btnM.MouseButton1Click:Connect(function() CFG.AimButton = "Middle"; UpdateMouseBtns(); Notify("☾","Aim: СКМ",1.5) end)
+
+Spacer(p1, 6)
 Toggle(p1, "Auto Prediction", "AutoPred")
 Toggle(p1, "Ping Compensation", "PingComp")
 Toggle(p1, "Acceleration Comp", "AccelComp")
@@ -1189,9 +1260,9 @@ Button(p3, "💀  MAX ACCURACY", function()
     CFG.HitboxExpander=true; CFG.HitboxSize=8
     Notify("☾","MAX ACCURACY",2) end, Color3.fromRGB(50,20,50))
 Spacer(p3,3)
-Button(p3, "🔥  RAGE MODE", function()
+Button(p3, "🔥  RAGE MODE (без ПКМ)", function()
     CFG.FOV=250; CFG.HitboxExpander=true; CFG.HitboxSize=15
-    CFG.OnlyWhenShooting=false
+    CFG.OnlyWhenShooting=false; CFG.HoldToAim=false
     Notify("☾","RAGE!",2) end, Color3.fromRGB(60,20,20))
 
 -- TAB 4: ESP
@@ -1236,27 +1307,28 @@ end)
 
 -- TAB 6: INFO
 local p6, act6 = CreateTab("ℹ️", "Info")
-SectionHeader(p6, "☾ EVENTIDE v3.3")
+SectionHeader(p6, "☾ EVENTIDE v3.4")
 Spacer(p6)
-Label(p6, "Custom Keybinds Edition", P.Accent2)
+Label(p6, "RMB Silent Aim Edition", P.Accent2)
 Label(p6, "Da Hood & Boom Hood", P.Dim)
 Spacer(p6, 8)
 SectionHeader(p6, "💀 ФУНКЦИИ")
-Label(p6, "• 100% Headshot Silent Aim", P.Green)
+Label(p6, "• Hold RMB → Silent Aim", P.Green)
+Label(p6, "• 100% Headshot", P.Green)
 Label(p6, "• Hitbox Expander (увеличение)", P.Green)
 Label(p6, "• Custom Keybinds", P.Green)
 Label(p6, "• Auto Prediction по пингу", P.White)
 Label(p6, "• Компенсация ускорения и гравитации", P.White)
 Label(p6, "• Anti-Jitter от лагов", P.White)
 Label(p6, "• Snap Radius (магнит)", P.White)
-Label(p6, "• Fresh Calc в момент выстрела", P.Green)
 Spacer(p6, 8)
 SectionHeader(p6, "🛡️ БЕЗОПАСНОСТЬ")
 Label(p6, "• workspace.Raycast НЕ тронут", P.Green)
 Label(p6, "• Хуки: Camera + Mouse", P.White)
 Label(p6, "• Античит не палит", P.Green)
 Spacer(p6, 8)
-SectionHeader(p6, "🎮 КЛАВИШИ (по умолчанию)")
+SectionHeader(p6, "🎮 УПРАВЛЕНИЕ")
+Label(p6, "🎯 Держи ПКМ — Silent Aim активен", P.Accent2)
 Label(p6, "INSERT — открыть меню", P.White)
 Label(p6, "F2 — вкл/выкл Silent Aim", P.White)
 Label(p6, "F3 — вкл/выкл ESP", P.White)
@@ -1264,8 +1336,7 @@ Label(p6, "F4 — вкл/выкл Hitbox", P.White)
 Label(p6, "F1 — 🚨 PANIC (выкл всё)", P.Red)
 Label(p6, "END — выгрузить скрипт", P.White)
 Spacer(p6, 4)
-Label(p6, "💡 Все клавиши можно изменить", P.Green)
-Label(p6, "во вкладке ⌨️ Keys", P.Green)
+Label(p6, "💡 Клавиши меняются в ⌨️ Keys", P.Green)
 Spacer(p6, 8)
 SectionHeader(p6, "🗑️ ВЫГРУЗИТЬ")
 Spacer(p6)
@@ -1297,7 +1368,7 @@ TS:Create(Main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.O
     Size = UDim2.new(0,520,0,500)
 }):Play()
 
--- ==================== HOTKEYS (кастомные) ====================
+-- ==================== HOTKEYS ====================
 UIS.InputBegan:Connect(function(i, g)
     if g then return end
     if BindingKey then return end
@@ -1350,4 +1421,4 @@ UIS.InputBegan:Connect(function(i, g)
     end
 end)
 
-Notify("☾ EVENTIDE v3.3", "💀 Keybinds Edition загружен!\nINSERT — меню | ⌨️ Keys для настройки", 8)
+Notify("☾ EVENTIDE v3.4", "🎯 Держи ПКМ для Silent Aim!\nINSERT — меню", 8)
