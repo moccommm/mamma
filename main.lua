@@ -1,7 +1,7 @@
 -- ===============================================
---   ☾ EVENTIDE v3.2 — HITBOX + HEADSHOT EDITION
+--   ☾ EVENTIDE v3.3 — CUSTOM KEYBINDS EDITION
 --   Da Hood & Boom Hood
---   Hit Part Spoof + 100% Headshot + Hitbox Expander
+--   Hit Part Spoof + 100% Headshot + Hitbox + Keybinds
 --   Premium Black-Purple UI
 -- ===============================================
 
@@ -68,6 +68,7 @@ local CFG = {
     HitboxTransp     = 0.7,
     ShowHitbox       = true,
 
+    -- ESP
     ESP       = true,
     Boxes     = true,
     Names     = true,
@@ -76,11 +77,20 @@ local CFG = {
     Tracers   = false,
     HeadDot   = true,
 
+    -- Visuals
     ShowFOV   = true,
     ShowPred  = true,
     Rainbow   = false,
     FOVCol    = Color3.fromRGB(130, 90, 240),
     Debug     = true,
+
+    -- Keybinds
+    KeyMenu    = "Insert",
+    KeyAim     = "F2",
+    KeyESP     = "F3",
+    KeyHitbox  = "F4",
+    KeyPanic   = "F1",
+    KeyUnload  = "End",
 }
 
 local Target         = nil
@@ -387,15 +397,6 @@ local function ExpandHitbox(plr)
         head.CanCollide = false
         head.Material = Enum.Material.ForceField
         head.Color = Color3.fromRGB(160, 60, 255)
-
-        if not head:FindFirstChild("HitboxIndicator") and CFG.ShowHitbox then
-            local bb = Instance.new("BillboardGui")
-            bb.Name = "HitboxIndicator"
-            bb.Size = UDim2.new(s, 0, s, 0)
-            bb.AlwaysOnTop = false
-            bb.Adornee = head
-            bb.Parent = head
-        end
     end
 end
 
@@ -414,8 +415,6 @@ local function ResetHitbox(plr)
             head.Color = orig.col or Color3.fromRGB(163, 162, 165)
         end)
     end
-    local bb = head:FindFirstChild("HitboxIndicator")
-    if bb then bb:Destroy() end
     OriginalHeadSizes[plr] = nil
 end
 
@@ -562,7 +561,7 @@ task.spawn(function()
     hooksInstalled = installed
     if installed > 0 then
         hookStatus = "🎯 " .. installed .. " hooks"
-        Notify("Eventide v3.2", "💀 " .. installed .. " HEADSHOT hooks", 5)
+        Notify("Eventide v3.3", "💀 " .. installed .. " HEADSHOT hooks", 5)
     else
         hookStatus = "❌ 0 hooks"
         Notify("Eventide", "Hooks не установлены", 5)
@@ -785,12 +784,12 @@ VerBadge.BackgroundColor3 = P.Accent; VerBadge.BorderSizePixel = 0
 Instance.new("UICorner", VerBadge).CornerRadius = UDim.new(0,6)
 local VerText = Instance.new("TextLabel", VerBadge)
 VerText.Size = UDim2.new(1,0,1,0); VerText.BackgroundTransparency = 1
-VerText.Text = "v3.2 💀"; VerText.TextColor3 = Color3.new(1,1,1)
+VerText.Text = "v3.3 💀"; VerText.TextColor3 = Color3.new(1,1,1)
 VerText.Font = Enum.Font.GothamBold; VerText.TextSize = 10
 
 local StatusLbl = Instance.new("TextLabel", TopBar)
-StatusLbl.Size = UDim2.new(0,250,0,14); StatusLbl.Position = UDim2.new(0,18,1,-18)
-StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Headshot + Hitbox • Da Hood"
+StatusLbl.Size = UDim2.new(0,300,0,14); StatusLbl.Position = UDim2.new(0,18,1,-18)
+StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Custom Keybinds • Da Hood"
 StatusLbl.TextColor3 = P.Dim; StatusLbl.Font = Enum.Font.Gotham; StatusLbl.TextSize = 10
 StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1003,6 +1002,99 @@ local function Spacer(par, h)
     local s = Instance.new("Frame", par); s.Size = UDim2.new(1,0,0,h or 6); s.BackgroundTransparency = 1
 end
 
+-- ==================== 🎮 KEYBIND SYSTEM ====================
+local BindingKey = nil
+local BindButtons = {}
+
+local function KeybindButton(par, lbl, cfgKey)
+    local f = Instance.new("Frame", par)
+    f.Size = UDim2.new(1,0,0,32)
+    f.BackgroundColor3 = P.Card
+    f.BorderSizePixel = 0
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
+
+    local l = Instance.new("TextLabel", f)
+    l.Size = UDim2.new(0.55,0,1,0)
+    l.Position = UDim2.new(0,14,0,0)
+    l.BackgroundTransparency = 1
+    l.Text = lbl
+    l.TextColor3 = P.White
+    l.Font = Enum.Font.Gotham
+    l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+
+    local btn = Instance.new("TextButton", f)
+    btn.Size = UDim2.new(0, 110, 0, 22)
+    btn.Position = UDim2.new(1, -120, 0.5, -11)
+    btn.BackgroundColor3 = P.Off
+    btn.Text = "[ " .. CFG[cfgKey] .. " ]"
+    btn.TextColor3 = P.Accent2
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 10
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+    local stroke = Instance.new("UIStroke", btn)
+    stroke.Color = P.Border
+    stroke.Thickness = 1
+
+    BindButtons[cfgKey] = btn
+
+    btn.MouseEnter:Connect(function()
+        if BindingKey ~= cfgKey then
+            TS:Create(btn, TI_Fast, {BackgroundColor3 = P.Card2}):Play()
+        end
+    end)
+    btn.MouseLeave:Connect(function()
+        if BindingKey ~= cfgKey then
+            TS:Create(btn, TI_Fast, {BackgroundColor3 = P.Off}):Play()
+        end
+    end)
+
+    btn.MouseButton1Click:Connect(function()
+        if BindingKey then
+            local prev = BindButtons[BindingKey]
+            if prev then
+                prev.Text = "[ " .. CFG[BindingKey] .. " ]"
+                TS:Create(prev, TI_Fast, {BackgroundColor3 = P.Off}):Play()
+            end
+        end
+        BindingKey = cfgKey
+        btn.Text = "[ ... нажми клавишу ]"
+        TS:Create(btn, TI_Fast, {BackgroundColor3 = P.Accent}):Play()
+        Notify("☾ Keybind", "Нажми клавишу для '" .. lbl .. "'\nESC — отмена", 4)
+    end)
+end
+
+UIS.InputBegan:Connect(function(input, gpe)
+    if not BindingKey then return end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    
+    local key = input.KeyCode
+    if key == Enum.KeyCode.Escape then
+        local btn = BindButtons[BindingKey]
+        if btn then
+            btn.Text = "[ " .. CFG[BindingKey] .. " ]"
+            TS:Create(btn, TI_Fast, {BackgroundColor3 = P.Off}):Play()
+        end
+        Notify("☾ Keybind", "Отменено", 1.5)
+        BindingKey = nil
+        return
+    end
+    
+    local keyName = key.Name
+    CFG[BindingKey] = keyName
+    
+    local btn = BindButtons[BindingKey]
+    if btn then
+        btn.Text = "[ " .. keyName .. " ]"
+        TS:Create(btn, TI_Fast, {BackgroundColor3 = P.Off}):Play()
+    end
+    
+    Notify("☾ Keybind", "Установлено: " .. keyName, 2)
+    BindingKey = nil
+end)
+
 -- ==================== TABS ====================
 
 -- TAB 1: AIM
@@ -1114,37 +1206,70 @@ SectionHeader(p4, "VISUALS")
 Toggle(p4, "FOV Circle", "ShowFOV"); Toggle(p4, "Prediction Dot", "ShowPred")
 Toggle(p4, "Rainbow FOV", "Rainbow"); Toggle(p4, "Debug Info", "Debug")
 
--- TAB 5: INFO
-local p5, act5 = CreateTab("ℹ️", "Info")
-SectionHeader(p5, "☾ EVENTIDE v3.2")
+-- TAB 5: KEYBINDS
+local p5, act5 = CreateTab("⌨️", "Keys")
+SectionHeader(p5, "🎮 CUSTOM KEYBINDS")
+Label(p5, "Нажми на бинд и выбери клавишу", P.Green)
+Label(p5, "ESC — отменить переназначение", P.Yellow)
 Spacer(p5)
-Label(p5, "Headshot + Hitbox Edition", P.Accent2)
-Label(p5, "Da Hood & Boom Hood", P.Dim)
-Spacer(p5, 8)
-SectionHeader(p5, "💀 ФУНКЦИИ")
-Label(p5, "• 100% Headshot Silent Aim", P.Green)
-Label(p5, "• Hitbox Expander (увеличение головы)", P.Green)
-Label(p5, "• Auto Prediction по пингу", P.White)
-Label(p5, "• Компенсация ускорения и гравитации", P.White)
-Label(p5, "• Anti-Jitter от лагов", P.White)
-Label(p5, "• Snap Radius (магнит)", P.White)
-Label(p5, "• Fresh Calc в момент выстрела", P.Green)
-Spacer(p5, 8)
-SectionHeader(p5, "🛡️ БЕЗОПАСНОСТЬ")
-Label(p5, "• workspace.Raycast НЕ тронут", P.Green)
-Label(p5, "• Хуки: Camera + Mouse", P.White)
-Label(p5, "• Античит не палит", P.Green)
-Spacer(p5, 8)
-SectionHeader(p5, "🎮 КЛАВИШИ")
-Label(p5, "INSERT — открыть меню", P.White)
-Label(p5, "F2 — вкл/выкл Silent Aim", P.White)
-Label(p5, "F3 — вкл/выкл ESP", P.White)
-Label(p5, "F4 — вкл/выкл Hitbox Expander", P.White)
-Label(p5, "END — выгрузить скрипт", P.White)
-Spacer(p5, 8)
-SectionHeader(p5, "🗑️ ВЫГРУЗИТЬ")
+KeybindButton(p5, "Open Menu", "KeyMenu")
+KeybindButton(p5, "Toggle Silent Aim", "KeyAim")
+KeybindButton(p5, "Toggle ESP", "KeyESP")
+KeybindButton(p5, "Toggle Hitbox", "KeyHitbox")
+KeybindButton(p5, "🚨 PANIC (выкл всё)", "KeyPanic")
+KeybindButton(p5, "Unload Script", "KeyUnload")
+Spacer(p5, 10)
+SectionHeader(p5, "🔄 RESET BINDS")
 Spacer(p5)
-Button(p5, "UNLOAD EVENTIDE", function()
+Button(p5, "Восстановить по умолчанию", function()
+    CFG.KeyMenu = "Insert"
+    CFG.KeyAim = "F2"
+    CFG.KeyESP = "F3"
+    CFG.KeyHitbox = "F4"
+    CFG.KeyPanic = "F1"
+    CFG.KeyUnload = "End"
+    for k, btn in pairs(BindButtons) do
+        btn.Text = "[ " .. CFG[k] .. " ]"
+    end
+    Notify("☾ Keybinds", "Сброшено по умолчанию", 2)
+end)
+
+-- TAB 6: INFO
+local p6, act6 = CreateTab("ℹ️", "Info")
+SectionHeader(p6, "☾ EVENTIDE v3.3")
+Spacer(p6)
+Label(p6, "Custom Keybinds Edition", P.Accent2)
+Label(p6, "Da Hood & Boom Hood", P.Dim)
+Spacer(p6, 8)
+SectionHeader(p6, "💀 ФУНКЦИИ")
+Label(p6, "• 100% Headshot Silent Aim", P.Green)
+Label(p6, "• Hitbox Expander (увеличение)", P.Green)
+Label(p6, "• Custom Keybinds", P.Green)
+Label(p6, "• Auto Prediction по пингу", P.White)
+Label(p6, "• Компенсация ускорения и гравитации", P.White)
+Label(p6, "• Anti-Jitter от лагов", P.White)
+Label(p6, "• Snap Radius (магнит)", P.White)
+Label(p6, "• Fresh Calc в момент выстрела", P.Green)
+Spacer(p6, 8)
+SectionHeader(p6, "🛡️ БЕЗОПАСНОСТЬ")
+Label(p6, "• workspace.Raycast НЕ тронут", P.Green)
+Label(p6, "• Хуки: Camera + Mouse", P.White)
+Label(p6, "• Античит не палит", P.Green)
+Spacer(p6, 8)
+SectionHeader(p6, "🎮 КЛАВИШИ (по умолчанию)")
+Label(p6, "INSERT — открыть меню", P.White)
+Label(p6, "F2 — вкл/выкл Silent Aim", P.White)
+Label(p6, "F3 — вкл/выкл ESP", P.White)
+Label(p6, "F4 — вкл/выкл Hitbox", P.White)
+Label(p6, "F1 — 🚨 PANIC (выкл всё)", P.Red)
+Label(p6, "END — выгрузить скрипт", P.White)
+Spacer(p6, 4)
+Label(p6, "💡 Все клавиши можно изменить", P.Green)
+Label(p6, "во вкладке ⌨️ Keys", P.Green)
+Spacer(p6, 8)
+SectionHeader(p6, "🗑️ ВЫГРУЗИТЬ")
+Spacer(p6)
+Button(p6, "UNLOAD EVENTIDE", function()
     ResetAllHitboxes()
     pcall(function() FOVd:Remove(); PD:Remove(); DB:Remove() end)
     for px in pairs(ESPObj) do KillESP(px) end
@@ -1172,10 +1297,15 @@ TS:Create(Main, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.O
     Size = UDim2.new(0,520,0,500)
 }):Play()
 
--- ==================== HOTKEYS ====================
+-- ==================== HOTKEYS (кастомные) ====================
 UIS.InputBegan:Connect(function(i, g)
     if g then return end
-    if i.KeyCode == Enum.KeyCode.Insert then
+    if BindingKey then return end
+    if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    
+    local keyName = i.KeyCode.Name
+
+    if keyName == CFG.KeyMenu then
         if Main.Visible then
             Main.Visible = false
         else
@@ -1185,19 +1315,33 @@ UIS.InputBegan:Connect(function(i, g)
             }):Play()
         end
     end
-    if i.KeyCode == Enum.KeyCode.F2 then
+
+    if keyName == CFG.KeyAim then
         CFG.SilentAim = not CFG.SilentAim
         Notify("☾ Silent Aim", CFG.SilentAim and "💀 ON" or "❌ OFF", 2)
     end
-    if i.KeyCode == Enum.KeyCode.F3 then
+
+    if keyName == CFG.KeyESP then
         CFG.ESP = not CFG.ESP
         Notify("☾ ESP", CFG.ESP and "✅ ON" or "❌ OFF", 2)
     end
-    if i.KeyCode == Enum.KeyCode.F4 then
+
+    if keyName == CFG.KeyHitbox then
         CFG.HitboxExpander = not CFG.HitboxExpander
-        Notify("☾ Hitbox", CFG.HitboxExpander and "💀 ON ("..CFG.HitboxSize..")" or "❌ OFF", 2)
+        Notify("☾ Hitbox", CFG.HitboxExpander and ("💀 ON ("..CFG.HitboxSize..")") or "❌ OFF", 2)
     end
-    if i.KeyCode == Enum.KeyCode.End then
+
+    if keyName == CFG.KeyPanic then
+        CFG.SilentAim = false
+        CFG.ESP = false
+        CFG.HitboxExpander = false
+        CFG.ShowFOV = false
+        CFG.ShowPred = false
+        ResetAllHitboxes()
+        Notify("☾ PANIC", "🚨 ВСЁ ВЫКЛЮЧЕНО", 3)
+    end
+
+    if keyName == CFG.KeyUnload then
         ResetAllHitboxes()
         pcall(function() FOVd:Remove(); PD:Remove(); DB:Remove() end)
         for px in pairs(ESPObj) do KillESP(px) end
@@ -1206,4 +1350,4 @@ UIS.InputBegan:Connect(function(i, g)
     end
 end)
 
-Notify("☾ EVENTIDE v3.2", "💀 Headshot + Hitbox загружен!\nF4 — Hitbox | INSERT — меню", 8)
+Notify("☾ EVENTIDE v3.3", "💀 Keybinds Edition загружен!\nINSERT — меню | ⌨️ Keys для настройки", 8)
