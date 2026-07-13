@@ -1,8 +1,7 @@
 -- ===============================================
---   ☾ EVENTIDE v3.4 — RMB SILENT AIM EDITION
+--   ☾ EVENTIDE v3.5 — FIXED HITBOX EDITION
 --   Da Hood & Boom Hood
---   Hit Part Spoof + 100% Headshot + Hitbox + Keybinds
---   Hold RMB to Silent Aim
+--   Hit Part Spoof + Hitbox (no floating bodies!)
 -- ===============================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -56,7 +55,6 @@ local CFG = {
     VisCheck         = false,
     MaxDist          = 900,
 
-    -- 100% Headshot
     HeadOnly         = true,
     PingComp         = true,
     AccelComp        = true,
@@ -64,13 +62,11 @@ local CFG = {
     AntiJitter       = true,
     SnapRadius       = 8,
 
-    -- Hitbox Expander
     HitboxExpander   = false,
     HitboxSize       = 6,
     HitboxTransp     = 0.7,
     ShowHitbox       = true,
 
-    -- ESP
     ESP       = true,
     Boxes     = true,
     Names     = true,
@@ -79,14 +75,12 @@ local CFG = {
     Tracers   = false,
     HeadDot   = true,
 
-    -- Visuals
     ShowFOV   = true,
     ShowPred  = true,
     Rainbow   = false,
     FOVCol    = Color3.fromRGB(130, 90, 240),
     Debug     = true,
 
-    -- Keybinds
     KeyMenu    = "Insert",
     KeyAim     = "F2",
     KeyESP     = "F3",
@@ -128,6 +122,11 @@ end
 local function GetHum(p)
     local c = p and p.Character
     return c and c:FindFirstChildOfClass("Humanoid")
+end
+
+local function IsAlive(p)
+    local hum = GetHum(p)
+    return hum and hum.Health > 0
 end
 
 local function IsDowned(p)
@@ -389,7 +388,7 @@ UIS.InputEnded:Connect(function(i)
     end
 end)
 
--- ==================== 💀 HITBOX EXPANDER ====================
+-- ==================== 💀 HITBOX EXPANDER (FIXED) ====================
 local OriginalHeadSizes = {}
 
 local function ExpandHitbox(plr)
@@ -398,14 +397,19 @@ local function ExpandHitbox(plr)
     if not char then return end
     local head = char:FindFirstChild("Head")
     if not head then return end
+    
+    -- ФИКС: не трогаем мёртвых
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return end
 
     if not OriginalHeadSizes[plr] then
         OriginalHeadSizes[plr] = {
-            size   = head.Size,
-            transp = head.Transparency,
-            canCol = head.CanCollide,
-            mat    = head.Material,
-            col    = head.Color,
+            size     = head.Size,
+            transp   = head.Transparency,
+            canCol   = head.CanCollide,
+            mat      = head.Material,
+            col      = head.Color,
+            massless = head.Massless,
         }
     end
 
@@ -414,6 +418,7 @@ local function ExpandHitbox(plr)
         head.Size = Vector3.new(s, s, s)
         head.Transparency = CFG.ShowHitbox and CFG.HitboxTransp or 1
         head.CanCollide = false
+        head.Massless = true  -- ФИКС: не влияет на физику
         head.Material = Enum.Material.ForceField
         head.Color = Color3.fromRGB(160, 60, 255)
     end
@@ -430,8 +435,17 @@ local function ResetHitbox(plr)
             head.Size = orig.size
             head.Transparency = orig.transp
             head.CanCollide = true
-            head.Material = orig.mat or Enum.Material.SmoothPlastic
+            head.Massless = orig.massless or false
+            head.Material = orig.mat or Enum.Material.Plastic
             head.Color = orig.col or Color3.fromRGB(163, 162, 165)
+        end)
+    else
+        pcall(function()
+            head.Size = Vector3.new(2, 1, 1)
+            head.Transparency = 0
+            head.CanCollide = true
+            head.Massless = false
+            head.Material = Enum.Material.Plastic
         end)
     end
     OriginalHeadSizes[plr] = nil
@@ -454,8 +468,16 @@ RS.Heartbeat:Connect(function()
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= LP and plr.Character then
-            local head = plr.Character:FindFirstChild("Head")
-            if head then
+            local char = plr.Character
+            local head = char:FindFirstChild("Head")
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            
+            -- ФИКС: не трогаем мёртвых, сбрасываем если умер
+            if not hum or hum.Health <= 0 then
+                if OriginalHeadSizes[plr] then
+                    ResetHitbox(plr)
+                end
+            elseif head then
                 local s = CFG.HitboxSize
                 if head.Size.X ~= s then
                     ExpandHitbox(plr)
@@ -470,21 +492,45 @@ RS.Heartbeat:Connect(function()
     end
 end)
 
+-- ФИКС: подписываемся на смерть и респавн
+local function HookCharacter(plr)
+    if plr == LP then return end
+    
+    plr.CharacterAdded:Connect(function(char)
+        task.wait(1)
+        if CFG.HitboxExpander then
+            ExpandHitbox(plr)
+        end
+        
+        -- Сброс при смерти
+        local hum = char:WaitForChild("Humanoid", 5)
+        if hum then
+            hum.Died:Connect(function()
+                ResetHitbox(plr)
+            end)
+        end
+    end)
+    
+    plr.CharacterRemoving:Connect(function()
+        ResetHitbox(plr)
+    end)
+end
+
 for _, plr in ipairs(Players:GetPlayers()) do
     if plr ~= LP then
-        plr.CharacterAdded:Connect(function()
-            task.wait(1)
-            if CFG.HitboxExpander then ExpandHitbox(plr) end
-        end)
+        HookCharacter(plr)
+        if plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                hum.Died:Connect(function()
+                    ResetHitbox(plr)
+                end)
+            end
+        end
     end
 end
 
-Players.PlayerAdded:Connect(function(plr)
-    plr.CharacterAdded:Connect(function()
-        task.wait(1)
-        if CFG.HitboxExpander then ExpandHitbox(plr) end
-    end)
-end)
+Players.PlayerAdded:Connect(HookCharacter)
 
 -- ==================== HIT PART SPOOFING ====================
 task.spawn(function()
@@ -581,7 +627,7 @@ task.spawn(function()
     hooksInstalled = installed
     if installed > 0 then
         hookStatus = "🎯 " .. installed .. " hooks"
-        Notify("Eventide v3.4", "💀 " .. installed .. " hooks | Держи ПКМ", 5)
+        Notify("Eventide v3.5", "💀 " .. installed .. " hooks | Держи ПКМ", 5)
     else
         hookStatus = "❌ 0 hooks"
         Notify("Eventide", "Hooks не установлены", 5)
@@ -805,12 +851,12 @@ VerBadge.BackgroundColor3 = P.Accent; VerBadge.BorderSizePixel = 0
 Instance.new("UICorner", VerBadge).CornerRadius = UDim.new(0,6)
 local VerText = Instance.new("TextLabel", VerBadge)
 VerText.Size = UDim2.new(1,0,1,0); VerText.BackgroundTransparency = 1
-VerText.Text = "v3.4 🎯"; VerText.TextColor3 = Color3.new(1,1,1)
+VerText.Text = "v3.5 🔧"; VerText.TextColor3 = Color3.new(1,1,1)
 VerText.Font = Enum.Font.GothamBold; VerText.TextSize = 10
 
 local StatusLbl = Instance.new("TextLabel", TopBar)
 StatusLbl.Size = UDim2.new(0,300,0,14); StatusLbl.Position = UDim2.new(0,18,1,-18)
-StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Hold RMB Silent Aim • Da Hood"
+StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Fixed Hitbox • RMB Silent Aim"
 StatusLbl.TextColor3 = P.Dim; StatusLbl.Font = Enum.Font.Gotham; StatusLbl.TextSize = 10
 StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1030,19 +1076,13 @@ local BindButtons = {}
 local function KeybindButton(par, lbl, cfgKey)
     local f = Instance.new("Frame", par)
     f.Size = UDim2.new(1,0,0,32)
-    f.BackgroundColor3 = P.Card
-    f.BorderSizePixel = 0
+    f.BackgroundColor3 = P.Card; f.BorderSizePixel = 0
     Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
 
     local l = Instance.new("TextLabel", f)
-    l.Size = UDim2.new(0.55,0,1,0)
-    l.Position = UDim2.new(0,14,0,0)
-    l.BackgroundTransparency = 1
-    l.Text = lbl
-    l.TextColor3 = P.White
-    l.Font = Enum.Font.Gotham
-    l.TextSize = 11
-    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Size = UDim2.new(0.55,0,1,0); l.Position = UDim2.new(0,14,0,0)
+    l.BackgroundTransparency = 1; l.Text = lbl; l.TextColor3 = P.White
+    l.Font = Enum.Font.Gotham; l.TextSize = 11; l.TextXAlignment = Enum.TextXAlignment.Left
 
     local btn = Instance.new("TextButton", f)
     btn.Size = UDim2.new(0, 110, 0, 22)
@@ -1050,14 +1090,10 @@ local function KeybindButton(par, lbl, cfgKey)
     btn.BackgroundColor3 = P.Off
     btn.Text = "[ " .. CFG[cfgKey] .. " ]"
     btn.TextColor3 = P.Accent2
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 10
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
+    btn.Font = Enum.Font.GothamBold; btn.TextSize = 10
+    btn.BorderSizePixel = 0; btn.AutoButtonColor = false
     Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
-    local stroke = Instance.new("UIStroke", btn)
-    stroke.Color = P.Border
-    stroke.Thickness = 1
+    local stroke = Instance.new("UIStroke", btn); stroke.Color = P.Border; stroke.Thickness = 1
 
     BindButtons[cfgKey] = btn
 
@@ -1090,7 +1126,6 @@ end
 UIS.InputBegan:Connect(function(input, gpe)
     if not BindingKey then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    
     local key = input.KeyCode
     if key == Enum.KeyCode.Escape then
         local btn = BindButtons[BindingKey]
@@ -1102,16 +1137,13 @@ UIS.InputBegan:Connect(function(input, gpe)
         BindingKey = nil
         return
     end
-    
     local keyName = key.Name
     CFG[BindingKey] = keyName
-    
     local btn = BindButtons[BindingKey]
     if btn then
         btn.Text = "[ " .. keyName .. " ]"
         TS:Create(btn, TI_Fast, {BackgroundColor3 = P.Off}):Play()
     end
-    
     Notify("☾ Keybind", "Установлено: " .. keyName, 2)
     BindingKey = nil
 end)
@@ -1136,26 +1168,18 @@ aimBtnFrame.BorderSizePixel = 0
 Instance.new("UICorner", aimBtnFrame).CornerRadius = UDim.new(0,8)
 
 local aimBtnLbl = Instance.new("TextLabel", aimBtnFrame)
-aimBtnLbl.Size = UDim2.new(0.5,0,1,0)
-aimBtnLbl.Position = UDim2.new(0,14,0,0)
-aimBtnLbl.BackgroundTransparency = 1
-aimBtnLbl.Text = "Aim Button"
-aimBtnLbl.TextColor3 = P.White
-aimBtnLbl.Font = Enum.Font.Gotham
-aimBtnLbl.TextSize = 11
-aimBtnLbl.TextXAlignment = Enum.TextXAlignment.Left
+aimBtnLbl.Size = UDim2.new(0.5,0,1,0); aimBtnLbl.Position = UDim2.new(0,14,0,0)
+aimBtnLbl.BackgroundTransparency = 1; aimBtnLbl.Text = "Aim Button"
+aimBtnLbl.TextColor3 = P.White; aimBtnLbl.Font = Enum.Font.Gotham
+aimBtnLbl.TextSize = 11; aimBtnLbl.TextXAlignment = Enum.TextXAlignment.Left
 
 local function MakeMouseBtn(x, name, cfgVal)
     local b = Instance.new("TextButton", aimBtnFrame)
-    b.Size = UDim2.new(0, 50, 0, 22)
-    b.Position = UDim2.new(1, x, 0.5, -11)
+    b.Size = UDim2.new(0, 50, 0, 22); b.Position = UDim2.new(1, x, 0.5, -11)
     b.BackgroundColor3 = CFG.AimButton == cfgVal and P.Accent or P.Off
-    b.Text = name
-    b.TextColor3 = P.White
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 10
-    b.BorderSizePixel = 0
-    b.AutoButtonColor = false
+    b.Text = name; b.TextColor3 = P.White
+    b.Font = Enum.Font.GothamBold; b.TextSize = 10
+    b.BorderSizePixel = 0; b.AutoButtonColor = false
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
     return b
 end
@@ -1195,9 +1219,9 @@ Slider(p1, "Snap Radius", "SnapRadius", 2, 20, 0)
 
 -- TAB 2: HITBOX
 local p2, act2 = CreateTab("🎯", "Hitbox")
-SectionHeader(p2, "💀 HITBOX EXPANDER")
-Label(p2, "Увеличивает голову врагов (клиентсайд)", P.Green)
-Label(p2, "Работает вместе с Silent Aim!", P.Yellow)
+SectionHeader(p2, "💀 HITBOX EXPANDER (FIXED)")
+Label(p2, "✅ Больше не летают после смерти!", P.Green)
+Label(p2, "Работает вместе с Silent Aim", P.Yellow)
 Spacer(p2)
 Toggle(p2, "Enable Hitbox Expander", "HitboxExpander")
 Toggle(p2, "Show Hitbox Visual", "ShowHitbox")
@@ -1307,15 +1331,21 @@ end)
 
 -- TAB 6: INFO
 local p6, act6 = CreateTab("ℹ️", "Info")
-SectionHeader(p6, "☾ EVENTIDE v3.4")
+SectionHeader(p6, "☾ EVENTIDE v3.5")
 Spacer(p6)
-Label(p6, "RMB Silent Aim Edition", P.Accent2)
+Label(p6, "Fixed Hitbox Edition", P.Accent2)
 Label(p6, "Da Hood & Boom Hood", P.Dim)
+Spacer(p6, 8)
+SectionHeader(p6, "🔧 ИСПРАВЛЕНО В v3.5")
+Label(p6, "✅ Тела не летают после смерти", P.Green)
+Label(p6, "✅ Хитбокс сбрасывается при смерти", P.Green)
+Label(p6, "✅ Добавлен Massless = true", P.Green)
+Label(p6, "✅ Подписка на Humanoid.Died", P.Green)
 Spacer(p6, 8)
 SectionHeader(p6, "💀 ФУНКЦИИ")
 Label(p6, "• Hold RMB → Silent Aim", P.Green)
 Label(p6, "• 100% Headshot", P.Green)
-Label(p6, "• Hitbox Expander (увеличение)", P.Green)
+Label(p6, "• Hitbox Expander (FIXED)", P.Green)
 Label(p6, "• Custom Keybinds", P.Green)
 Label(p6, "• Auto Prediction по пингу", P.White)
 Label(p6, "• Компенсация ускорения и гравитации", P.White)
@@ -1335,8 +1365,6 @@ Label(p6, "F3 — вкл/выкл ESP", P.White)
 Label(p6, "F4 — вкл/выкл Hitbox", P.White)
 Label(p6, "F1 — 🚨 PANIC (выкл всё)", P.Red)
 Label(p6, "END — выгрузить скрипт", P.White)
-Spacer(p6, 4)
-Label(p6, "💡 Клавиши меняются в ⌨️ Keys", P.Green)
 Spacer(p6, 8)
 SectionHeader(p6, "🗑️ ВЫГРУЗИТЬ")
 Spacer(p6)
@@ -1421,4 +1449,4 @@ UIS.InputBegan:Connect(function(i, g)
     end
 end)
 
-Notify("☾ EVENTIDE v3.4", "🎯 Держи ПКМ для Silent Aim!\nINSERT — меню", 8)
+Notify("☾ EVENTIDE v3.5", "🔧 Фикс хитбокса!\nТела больше не летают", 8)
