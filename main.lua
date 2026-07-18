@@ -1,7 +1,8 @@
 -- ===============================================
---   ☾ EVENTIDE v3.5 — FIXED HITBOX EDITION
+--   ☾ EVENTIDE v3.6 — RESPAWN-SAFE EDITION
 --   Da Hood & Boom Hood
 --   Hit Part Spoof + Hitbox (no floating bodies!)
+--   Fixed head offset loss after respawn
 -- ===============================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -94,6 +95,11 @@ local cachedPred     = nil
 local ESPObj         = {}
 local VelHist        = {}
 local PosHist        = {}
+local SpawnTimes     = {}
+local HeadOffsetCache = {}
+local DEFAULT_HEAD_OFFSET = Vector3.new(0, 1.5, 0)
+local SPAWN_GRACE    = 0.5
+local OFFSET_SETTLE  = 0.3
 local RH             = 0
 local curPred        = 0.135
 local isShooting     = false
@@ -197,21 +203,33 @@ local function IsValid(p)
     return true
 end
 
--- ==================== VELOCITY + POSITION HISTORY ====================
+-- ==================== VELOCITY + POSITION HISTORY (RESPAWN-SAFE) ====================
 RS.Heartbeat:Connect(function()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LP and p.Character then
+            local st = SpawnTimes[p]
+            if st and (tick() - st) < OFFSET_SETTLE then continue end
+
             local r = GetRoot(p)
             local h = GetHead(p)
             if r and h then
+                local liveOffset = h.Position - r.Position
+                if liveOffset.Magnitude > 0.3 and liveOffset.Magnitude < 5 then
+                    HeadOffsetCache[p] = liveOffset
+                elseif not HeadOffsetCache[p] then
+                    HeadOffsetCache[p] = DEFAULT_HEAD_OFFSET
+                end
+
                 if not VelHist[p] then VelHist[p] = {} end
                 table.insert(VelHist[p], 1, r.AssemblyLinearVelocity)
                 if #VelHist[p] > 15 then table.remove(VelHist[p]) end
 
                 if not PosHist[p] then PosHist[p] = {} end
                 table.insert(PosHist[p], 1, {
-                    pos = h.Position, root = r.Position,
-                    vel = r.AssemblyLinearVelocity, time = tick()
+                    pos  = h.Position,
+                    root = r.Position,
+                    vel  = r.AssemblyLinearVelocity,
+                    time = tick()
                 })
                 if #PosHist[p] > 20 then table.remove(PosHist[p]) end
             end
@@ -220,11 +238,13 @@ RS.Heartbeat:Connect(function()
 end)
 
 Players.PlayerRemoving:Connect(function(p)
-    VelHist[p] = nil
-    PosHist[p] = nil
+    VelHist[p]         = nil
+    PosHist[p]         = nil
+    SpawnTimes[p]      = nil
+    HeadOffsetCache[p] = nil
 end)
 
--- ==================== 100% HEADSHOT PREDICTION ====================
+-- ==================== 100% HEADSHOT PREDICTION (RESPAWN-SAFE) ====================
 local function GetSmoothedVelocity(plr)
     local h = VelHist[plr]
     if not h or #h == 0 then
@@ -278,6 +298,18 @@ local function GetHeadPosition100(plr)
     local hum  = GetHum(plr)
     if not head or not root then return nil end
 
+    -- РЕСПАВН ЗАЩИТА: первые кадры — голова напрямую
+    local st = SpawnTimes[plr]
+    if st and (tick() - st) < SPAWN_GRACE then
+        return head.Position
+    end
+
+    -- Если история слишком короткая — prediction ненадёжен
+    local velHistory = VelHist[plr]
+    if not velHistory or #velHistory < 3 then
+        return head.Position
+    end
+
     local pred
     if CFG.AutoPred then
         pred = CalcAutoPrediction()
@@ -287,12 +319,18 @@ local function GetHeadPosition100(plr)
     curPred = pred
 
     local vel = GetSmoothedVelocity(plr)
-    local predictedRoot = root.Position + Vector3.new(vel.X*pred, 0, vel.Z*pred)
+
+    -- Стоит на месте — просто голова
+    if vel.Magnitude < 3 then
+        return head.Position
+    end
+
+    local predictedRoot = root.Position + Vector3.new(vel.X * pred, 0, vel.Z * pred)
 
     if CFG.AccelComp then
         local acc = GetAcceleration(plr)
         predictedRoot = predictedRoot + Vector3.new(
-            acc.X*pred*pred*0.5, 0, acc.Z*pred*pred*0.5
+            acc.X * pred * pred * 0.5, 0, acc.Z * pred * pred * 0.5
         )
     end
 
@@ -301,7 +339,7 @@ local function GetHeadPosition100(plr)
         local g = WS.Gravity or 196.2
         if state == Enum.HumanoidStateType.Jumping
         or state == Enum.HumanoidStateType.Freefall then
-            local predY = root.Position.Y + vel.Y*pred - 0.5*g*pred*pred
+            local predY = root.Position.Y + vel.Y * pred - 0.5 * g * pred * pred
             predictedRoot = Vector3.new(predictedRoot.X, predY, predictedRoot.Z)
         else
             predictedRoot = Vector3.new(predictedRoot.X, root.Position.Y, predictedRoot.Z)
@@ -314,22 +352,31 @@ local function GetHeadPosition100(plr)
         local ping = GetPing()
         local extraComp = (ping / 1000) * 0.15
         predictedRoot = predictedRoot + Vector3.new(
-            vel.X*extraComp, 0, vel.Z*extraComp
+            vel.X * extraComp, 0, vel.Z * extraComp
         )
     end
 
-    local headOffset = head.Position - root.Position
+    -- КЭШИРОВАННЫЙ ОФФСЕТ ГОЛОВЫ (не мусорит после респавна)
+    local headOffset = HeadOffsetCache[plr]
+    if not headOffset then
+        local liveOffset = head.Position - root.Position
+        if liveOffset.Magnitude > 0.3 and liveOffset.Magnitude < 5 then
+            headOffset = liveOffset
+            HeadOffsetCache[plr] = headOffset
+        else
+            headOffset = DEFAULT_HEAD_OFFSET
+        end
+    end
+
     local finalHead = predictedRoot + headOffset
 
-    local maxOffset = vel.Magnitude*pred*2 + CFG.SnapRadius
+    -- SNAP RADIUS CLAMP
+    local maxOffset = vel.Magnitude * pred * 2 + CFG.SnapRadius
     local diff = finalHead - head.Position
     if diff.Magnitude > maxOffset then
         finalHead = head.Position + diff.Unit * maxOffset
     end
 
-    if vel.Magnitude < 3 then
-        finalHead = head.Position
-    end
     return finalHead
 end
 
@@ -388,7 +435,7 @@ UIS.InputEnded:Connect(function(i)
     end
 end)
 
--- ==================== 💀 HITBOX EXPANDER (FIXED) ====================
+-- ==================== HITBOX EXPANDER (FIXED) ====================
 local OriginalHeadSizes = {}
 
 local function ExpandHitbox(plr)
@@ -397,8 +444,7 @@ local function ExpandHitbox(plr)
     if not char then return end
     local head = char:FindFirstChild("Head")
     if not head then return end
-    
-    -- ФИКС: не трогаем мёртвых
+
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
 
@@ -418,7 +464,7 @@ local function ExpandHitbox(plr)
         head.Size = Vector3.new(s, s, s)
         head.Transparency = CFG.ShowHitbox and CFG.HitboxTransp or 1
         head.CanCollide = false
-        head.Massless = true  -- ФИКС: не влияет на физику
+        head.Massless = true
         head.Material = Enum.Material.ForceField
         head.Color = Color3.fromRGB(160, 60, 255)
     end
@@ -471,8 +517,7 @@ RS.Heartbeat:Connect(function()
             local char = plr.Character
             local head = char:FindFirstChild("Head")
             local hum = char:FindFirstChildOfClass("Humanoid")
-            
-            -- ФИКС: не трогаем мёртвых, сбрасываем если умер
+
             if not hum or hum.Health <= 0 then
                 if OriginalHeadSizes[plr] then
                     ResetHitbox(plr)
@@ -492,27 +537,52 @@ RS.Heartbeat:Connect(function()
     end
 end)
 
--- ФИКС: подписываемся на смерть и респавн
+-- РЕСПАВН ХУК (очистка аим-данных + hitbox)
 local function HookCharacter(plr)
     if plr == LP then return end
-    
+
     plr.CharacterAdded:Connect(function(char)
-        task.wait(1)
+        -- Очищаем всё от прошлой жизни
+        VelHist[plr]         = {}
+        PosHist[plr]         = {}
+        HeadOffsetCache[plr] = nil
+        SpawnTimes[plr]      = tick()
+
+        local root = char:WaitForChild("HumanoidRootPart", 10)
+        local head = char:WaitForChild("Head", 10)
+
+        if root and head then
+            task.wait(OFFSET_SETTLE)
+            local offset = head.Position - root.Position
+            if offset.Magnitude > 0.3 and offset.Magnitude < 5 then
+                HeadOffsetCache[plr] = offset
+            else
+                HeadOffsetCache[plr] = DEFAULT_HEAD_OFFSET
+            end
+        end
+
+        task.wait(0.7)
         if CFG.HitboxExpander then
             ExpandHitbox(plr)
         end
-        
-        -- Сброс при смерти
-        local hum = char:WaitForChild("Humanoid", 5)
+
+        local hum = char:FindFirstChildOfClass("Humanoid")
+            or char:WaitForChild("Humanoid", 5)
         if hum then
             hum.Died:Connect(function()
                 ResetHitbox(plr)
+                VelHist[plr]         = {}
+                PosHist[plr]         = {}
+                HeadOffsetCache[plr] = nil
             end)
         end
     end)
-    
+
     plr.CharacterRemoving:Connect(function()
         ResetHitbox(plr)
+        VelHist[plr]         = {}
+        PosHist[plr]         = {}
+        HeadOffsetCache[plr] = nil
     end)
 end
 
@@ -524,6 +594,9 @@ for _, plr in ipairs(Players:GetPlayers()) do
             if hum then
                 hum.Died:Connect(function()
                     ResetHitbox(plr)
+                    VelHist[plr]         = {}
+                    PosHist[plr]         = {}
+                    HeadOffsetCache[plr] = nil
                 end)
             end
         end
@@ -627,7 +700,7 @@ task.spawn(function()
     hooksInstalled = installed
     if installed > 0 then
         hookStatus = "🎯 " .. installed .. " hooks"
-        Notify("Eventide v3.5", "💀 " .. installed .. " hooks | Держи ПКМ", 5)
+        Notify("Eventide v3.6", "💀 " .. installed .. " hooks | Держи ПКМ", 5)
     else
         hookStatus = "❌ 0 hooks"
         Notify("Eventide", "Hooks не установлены", 5)
@@ -851,12 +924,12 @@ VerBadge.BackgroundColor3 = P.Accent; VerBadge.BorderSizePixel = 0
 Instance.new("UICorner", VerBadge).CornerRadius = UDim.new(0,6)
 local VerText = Instance.new("TextLabel", VerBadge)
 VerText.Size = UDim2.new(1,0,1,0); VerText.BackgroundTransparency = 1
-VerText.Text = "v3.5 🔧"; VerText.TextColor3 = Color3.new(1,1,1)
+VerText.Text = "v3.6 🔧"; VerText.TextColor3 = Color3.new(1,1,1)
 VerText.Font = Enum.Font.GothamBold; VerText.TextSize = 10
 
 local StatusLbl = Instance.new("TextLabel", TopBar)
 StatusLbl.Size = UDim2.new(0,300,0,14); StatusLbl.Position = UDim2.new(0,18,1,-18)
-StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Fixed Hitbox • RMB Silent Aim"
+StatusLbl.BackgroundTransparency = 1; StatusLbl.Text = "Respawn-Safe • Fixed Hitbox • RMB Silent Aim"
 StatusLbl.TextColor3 = P.Dim; StatusLbl.Font = Enum.Font.Gotham; StatusLbl.TextSize = 10
 StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 
@@ -1069,7 +1142,7 @@ local function Spacer(par, h)
     local s = Instance.new("Frame", par); s.Size = UDim2.new(1,0,0,h or 6); s.BackgroundTransparency = 1
 end
 
--- ==================== 🎮 KEYBIND SYSTEM ====================
+-- ==================== KEYBIND SYSTEM ====================
 local BindingKey = nil
 local BindButtons = {}
 
@@ -1160,7 +1233,6 @@ Toggle(p1, "Hold to Aim (по кнопке)", "HoldToAim")
 Toggle(p1, "Only When Shooting", "OnlyWhenShooting")
 Spacer(p1, 4)
 
--- Aim Button Selector
 local aimBtnFrame = Instance.new("Frame", p1)
 aimBtnFrame.Size = UDim2.new(1,0,0,32)
 aimBtnFrame.BackgroundColor3 = P.Card
@@ -1331,16 +1403,21 @@ end)
 
 -- TAB 6: INFO
 local p6, act6 = CreateTab("ℹ️", "Info")
-SectionHeader(p6, "☾ EVENTIDE v3.5")
+SectionHeader(p6, "☾ EVENTIDE v3.6")
 Spacer(p6)
-Label(p6, "Fixed Hitbox Edition", P.Accent2)
+Label(p6, "Respawn-Safe Edition", P.Accent2)
 Label(p6, "Da Hood & Boom Hood", P.Dim)
 Spacer(p6, 8)
-SectionHeader(p6, "🔧 ИСПРАВЛЕНО В v3.5")
+SectionHeader(p6, "🔧 ИСПРАВЛЕНО В v3.6")
 Label(p6, "✅ Тела не летают после смерти", P.Green)
 Label(p6, "✅ Хитбокс сбрасывается при смерти", P.Green)
-Label(p6, "✅ Добавлен Massless = true", P.Green)
-Label(p6, "✅ Подписка на Humanoid.Died", P.Green)
+Label(p6, "✅ Massless = true на хитбокс", P.Green)
+Label(p6, "✅ Humanoid.Died очистка данных", P.Green)
+Label(p6, "✅ HeadOffsetCache — оффсет не теряется", P.Green)
+Label(p6, "✅ SpawnTimes grace period (0.5s)", P.Green)
+Label(p6, "✅ VelHist/PosHist сброс при респавне", P.Green)
+Label(p6, "✅ Санитизация оффсета (0.3–5 studs)", P.Green)
+Label(p6, "✅ Fallback DEFAULT_HEAD_OFFSET (0,1.5,0)", P.Green)
 Spacer(p6, 8)
 SectionHeader(p6, "💀 ФУНКЦИИ")
 Label(p6, "• Hold RMB → Silent Aim", P.Green)
@@ -1401,7 +1478,7 @@ UIS.InputBegan:Connect(function(i, g)
     if g then return end
     if BindingKey then return end
     if i.UserInputType ~= Enum.UserInputType.Keyboard then return end
-    
+
     local keyName = i.KeyCode.Name
 
     if keyName == CFG.KeyMenu then
@@ -1449,4 +1526,4 @@ UIS.InputBegan:Connect(function(i, g)
     end
 end)
 
-Notify("☾ EVENTIDE v3.5", "🔧 Фикс хитбокса!\nТела больше не летают", 8)
+Notify("☾ EVENTIDE v3.6", "🔧 Respawn-Safe!\nОффсеты голов не теряются", 8)
